@@ -574,7 +574,7 @@ oldInt9	resd 1
 	;; constants
 	;;
 
-stackSegment		equ 0x2000 ; arbitrary
+stackSegment		equ 0x0050 ; arbitrary
 stackTop		equ 0xF000
 
 	;; bootstrap related
