@@ -9,6 +9,18 @@
 	org 0x0c00
 
 	;; 
+	;; macros
+	;; 
+
+	;; io delay
+%define ioDelay	out 0xED, ax
+	;; old way:
+	;;jmp short $+2
+	;; new way: (as seen in Robert Collins' fu on x86.org)
+
+	;; end of macros
+
+	;; 
 	;; main function (must come first)
 	;; 
 main:
@@ -61,9 +73,7 @@ main:
 	rep movsb
 	call dot
 
-	call installInt9
-
-	;; this will hang until we fix keyboard
+	;; wait for a key
 	xor ax, ax
 	int 0x16
 
@@ -91,7 +101,7 @@ main:
 	mov al, 0x0F
 	or al, 0x80
 	out cmosIndexRegister, al
-	call ioDelay
+	ioDelay
 	;; change this to boot in different manners
  	;; 0x04 will read floppy then hdd
 	;; 0x05 will flush keyboard buffer, do an EOI, then jump to [40:67]
@@ -99,10 +109,10 @@ main:
 	;; 0x0a will jump to our own code without the above
 	mov al, 0x05
 	out cmosDataRegister, al
-	call ioDelay
+	ioDelay
 	mov al, 0x00
 	out cmosIndexRegister, al
-	call ioDelay
+	ioDelay
 	sti
 	;; reset with the keyboard controller
 	;; (slower than triple fault, but triple fault requires
@@ -111,7 +121,7 @@ main:
 	;; while one == don't pulse.
 	mov al, kbdPulseCtrlCommand | ~(0x1)
 	out kbdControlRegister, al
-	call ioDelay
+	ioDelay
 
 	;; we should never get here
 	;; normal reset
@@ -225,22 +235,69 @@ hexal:	cmp al, 9
 picReset:
 	push ax
 
-	cli
-	;; unmask all the IRQs just to be safe
-	mov al, 0x0
+	;; ICW1
+	mov al, 0x11
+	out picMasterCommandRegister, al
+	ioDelay
+	out picSlaveCommandRegister, al
+	ioDelay
+
+	;; ICW2
+	mov al, 0x08
 	out picMasterMaskRegister, al
-	call ioDelay
+	ioDelay
+	mov al, 0x10
 	out picSlaveMaskRegister, al
-	call ioDelay
+	ioDelay
+
+	;; ICW3
+	mov al, 0x04
+	out picMasterMaskRegister, al
+	ioDelay
+	mov al, 0x02
+	out picSlaveMaskRegister, al
+	ioDelay
+
+	;; ICW4
+	mov al, 0x01
+	out picMasterMaskRegister, al
+	ioDelay
+	out picSlaveMaskRegister, al
+	ioDelay
+
+	;; dump 8259 mask state
+	;mov al, '<'
+	;call putc
+	;in al, picMasterMaskRegister
+	;mov ah, al
+	;call dumpbyte
+	;mov al, '^'
+	;call putc
+	;in al, picSlaveMaskRegister
+	;mov ah, al
+	;call dumpbyte
+	;mov al, '>'
+	;call putc
+
+	cli
+	;; commented out: we used to unmask all the IRQs just to be safe
+	;mov al, 0x0
+	;; mask out everything but irqs 0, 1, and 2
+	mov al, 0xFF
+	out picSlaveMaskRegister, al
+	ioDelay
+	mov al, 0xF8
+	out picMasterMaskRegister, al
+	ioDelay
 
 	;; send EOI (interrupt finished) to PIC, just in case Linux left an
 	;; int ``with its pants down'', as it were
 	;; reason this is commented out: the bios should do this for us
 	;;mov al, picEndOfInterrupt
 	;;out picMasterCommandRegister, al
-	;;call ioDelay
+	;;ioDelay
 	;;out picSlaveCommandRegister, al
-	;;call ioDelay
+	;;ioDelay
 
 	sti
 
@@ -258,14 +315,6 @@ videoReset:
 	pop ax
 	ret
 
-	;; io delay
-ioDelay:
-	;; old way:
-	;;jmp short $+2
-	;; new way: (as seen in Robert Collins' fu on x86.org)
-	out 0xED, ax
-	ret
-
 	;;
 	;; reset the 825[34] PIT (Programmable Interval Timer),
 	;; 
@@ -275,12 +324,12 @@ pitReset:
 	cli
 	mov al, 0x36
 	out 0x43, al
-	call ioDelay
+	ioDelay
 	xor al, al
 	out 0x40, al
-	call ioDelay
+	ioDelay
 	out 0x40, al
-	call ioDelay
+	ioDelay
 	sti
 
 	pop ax
@@ -292,26 +341,57 @@ pitReset:
 kbdReset:
 	push ax
 
-	;; explicitly enable the keyboard
-	mov al, kbdResetToDefaultCommand
+	;; explicitly disable the keyboard
+	mov al, kbdDisableCommand
 	out kbdDataRegister, al
-	call ioDelay
+	ioDelay
 	call kbdWaitForACK
-	jnc .l1
+	jnc .l3
 	;; an error occurred
-	mov al, '#'
+	mov al, '%'
 	call putc
-.l1:
+.l3:
+
 	;; reset the keyboard
 	mov al, kbdResetToDefaultCommand
 	out kbdDataRegister, al
-	call ioDelay
+	ioDelay
 	call kbdWaitForACK
 	jnc .l2
 	;; an error occurred
 	mov al, '$'
 	call putc
 .l2:
+	;; explicitly enable the keyboard
+	mov al, kbdEnableCommand
+	out kbdDataRegister, al
+	ioDelay
+	call kbdWaitForACK
+	jnc .l1
+	;; an error occurred
+	mov al, '#'
+	call putc
+.l1:
+
+	;; output controller mode
+	mov al, kbdReadModeCtrlCommand
+	out kbdControlRegister, al
+	ioDelay
+	call kbdWaitForOutput
+	mov ax, videoSegment
+	mov es, ax
+	mov di, 0x0
+	in al, kbdDataRegister
+	mov ah, 0x01
+	mov bh, al
+	shr al, 4
+	call hexal
+	stosw
+	mov al, bh
+	and al, 0x0F
+	call hexal
+	stosw
+
 	pop ax
 	ret
 
@@ -337,76 +417,17 @@ kbdDisableA20:
 
 	mov al, kbdReadOutputPortCtrlCommand
 	out kbdControlRegister, al
-	call ioDelay
+	ioDelay
 	in al, kbdDataRegister
 	mov ah, al
 	mov al, kbdWriteOutputPortCtrlCommand
 	out kbdControlRegister, al
-	call ioDelay
+	ioDelay
 	mov al, 0xDD		; FIXME
 	out kbdDataRegister, al
-	call ioDelay
+	ioDelay
 
 	pop ax
-	ret
-
-	;;
-	;; faux int9 handler for testing
-	;;
-handleInt9:
-	cli
-	mov ax, videoSegment
-	mov es, ax
-	mov di, 0x0
-	in al, kbdDataRegister
-	cmp al, 0x01
-	jne .l1
-	call removeInt9
-.l1:	mov ah, 0x01
-	mov bh, al
-	shr al, 4
-	call hexal
-	stosw
-	mov al, bh
-	and al, 0x0F
-	call hexal
-	stosw
-	;; send end of interrupt
-	mov al, 0x20
-	out picMasterCommandRegister, al
-	sti
-	ret
-
-	;; let's try our own keyboard handler
-installInt9:
-	;; note: size optimization, we assume CS is 0x0
-	push cs
-	push cs
-	pop ds
-	pop es
-	mov si, 9*4
-	mov di, si
-	lodsd
-	mov ebx, eax
-	mov eax, handleInt9
-	stosd
-	push cs
-	pop es
-	mov di, oldInt9
-	mov eax, ebx
-	stosd
-	ret
-
-removeInt9:
-	push cs
-	pop ds
-	mov si, oldInt9
-	lodsd
-	;; note: size optimization, we assume CS is 0x0
-	push cs
-	pop es
-	mov di, 9*4
-	stosd
 	ret
 
 	;; perform self-tests
@@ -417,7 +438,7 @@ kbdTest:
 	;; keyboard self-test (as opposed to the keyboard interface)
 	mov al, kbdSelfTestCtrlCommand
 	out kbdControlRegister, al
-	call ioDelay
+	ioDelay
 	call kbdWaitForOutput
 	in al, kbdDataRegister
 	cmp al, 0x55
@@ -431,7 +452,7 @@ kbdTest:
 	;; interface self-test
 	mov al, kbdInterfaceSelfTestCtrlCommand
 	out kbdControlRegister, al
-	call ioDelay
+	ioDelay
 	call kbdWaitForOutput
 	in al, kbdDataRegister
 	jnz .l2
