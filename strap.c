@@ -27,7 +27,8 @@
 #define STRAP_NAME "strap"
 #define STRAP_MAJOR 60
 #define STRAP_MINOR 0
-#define STRAP_CODELEN 1024
+#define STRAP_BASE (0x1000)
+#define STRAP_CODELEN (1024)
 
 static unsigned char strap_code[STRAP_CODELEN];
 static int strap_codepos = 0;
@@ -35,8 +36,7 @@ static int strap_codepos = 0;
 /* This stuff was taken from arch/i386/kernel/process.c in 2.3.99pre9, and
     modified for our purposes */
 
-static unsigned long long
-real_mode_gdt_entries [] =
+static unsigned long long real_mode_gdt_entries [] =
 {
     0x0000000000000000ULL,  /* Null descriptor */
     0x00009a000000ffffULL,  /* 16-bit real-mode 64k code at 0x00000000 */
@@ -53,22 +53,22 @@ struct descriptortable_t
 
 static unsigned char mode_switch [] =
 {
-    0x66, 0x0f, 0x20, 0xc0,
-    0x66, 0x66, 0x25, 0x11, 00, 0x00, 0x00,
-    0x66, 0x66, 0x0d, 0x00, 0x00, 0x00, 0x60,
-    0x66, 0x0f, 0x22, 0xc0,
-    0x66, 0x66, 0x31, 0xdb,
-    0x66, 0x0f, 0x22, 0xdb,
-    0x66, 0x0f, 0x20, 0xc3,
-    0x66, 0x66, 0x81, 0xe3, 0x00, 0x00, 0x00, 0x60,
-    0x74, 0x02,
-    0x0f, 0x08,
-    0x24, 0x10,
-    0x66, 0x0f, 0x22, 0xc0,
-    0xEA, (char)(0x1000-STRAP_CODELEN), (char)((0x1000-STRAP_CODELEN)>>8),
-    0x00, 0x00,			/*    jmp 0x1000-STRAP_CODELEN        */
-    /* Note on above magic number: this is where we always copy
-       the code in our_machine_real_restart - this is very important! */
+  0x66, 0x0f, 0x20, 0xC0,
+  0x66, 0x66, 0x25, 0x11, 0x00, 0x00, 0x00,
+  0x66, 0x66, 0x0D, 0x00, 0x00, 0x00, 0x60,
+  0x66, 0x0F, 0x22, 0xC0,
+  0x66, 0x66, 0x31, 0xDB,
+  0x66, 0x0F, 0x22, 0xDB,
+  0x66, 0x0F, 0x20, 0xC3,
+  0x66, 0x66, 0x81, 0xE3, 0x00, 0x00, 0x00, 0x60,
+  0x74, 0x02,
+  0x0F, 0x09,
+  0x24, 0x10,
+  0x66, 0x0F, 0x22, 0xC0,
+  0xEA, (unsigned char)(STRAP_BASE-STRAP_CODELEN), (unsigned char)((STRAP_BASE-STRAP_CODELEN)>>8),
+  0x00, 0x00,			/*    jmp STRAP_BASE-STRAP_CODELEN        */
+  /* Note on above magic number: this is where we always copy
+     the code in our_machine_real_restart - this is very important! */
 };
 
 
@@ -125,9 +125,9 @@ void our_machine_real_restart(unsigned char *code, int length)
        off paging.  Copy it near the end of the first page, out of the way
        of BIOS variables. */
 
-    our_memcpy ((void *) (0x1000 - sizeof (mode_switch) - STRAP_CODELEN),
+    our_memcpy ((void *) (STRAP_BASE - (sizeof (mode_switch) + STRAP_CODELEN)),
 		mode_switch, sizeof (mode_switch));
-    our_memcpy ((void *) (0x1000 - STRAP_CODELEN), code, length);
+    our_memcpy ((void *) (STRAP_BASE - STRAP_CODELEN), code, length);
 
     /* Set up the IDT for real mode. */
 
@@ -151,14 +151,14 @@ void our_machine_real_restart(unsigned char *code, int length)
                           "\tmovl %%eax,%%fs\n"
                           "\tmovl %%eax,%%gs\n"
                           "\tmovl %%eax,%%ss" : : : "eax");
-    
+
     /* Jump to the 16-bit code that we copied earlier.  It disables paging
        and the cache, switches to real mode, and jumps to the BIOS reset
        entry point. */
 
     __asm__ __volatile__ ("ljmp $0x0008,%0"
                           :
-                          : "i" ((void *) (0x1000 - sizeof(mode_switch) - STRAP_CODELEN)));
+                          : "i" ((void *) (STRAP_BASE - sizeof(mode_switch) - STRAP_CODELEN)));
 }
 
 static ssize_t strap_write(struct file *file, const char *buf, size_t count,

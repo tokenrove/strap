@@ -4,8 +4,8 @@
 	;; Julian Squires <tek@wiw.org> / 2000
 	;;
 
-	;; change this if STRAP_CODELEN in strap.c is ever changed!
-	;; (it should be 0x1000-STRAP_CODELEN)
+	;; change this if STRAP_CODELEN or STRAP_BASE in strap.c are ever
+	;; changed! (it should be STRAP_BASE-STRAP_CODELEN)
 	org 0x0c00
 
 	;; 
