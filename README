@@ -20,11 +20,16 @@ distributed) The heart of the code, our_machine_real_restart, is
 largely copied from arch/i386/process.c in kernel 2.3.99pre9.
 
 ribbon.s contains the code which copies the bootblock to 0000:7C00
-_after_ the kernel has dropped out of pmode. It needs to prefix
-the bootblock code before the bootblock code gets written out.
+_after_ the kernel has dropped out of pmode. It needs to prefix the
+bootblock code before the bootblock code gets written out.
 
-modeswitch.s contains the assembler code contained in the
-array mode_switch in strap.c.
+modeswitch.s contains the assembler code contained in the array
+mode_switch in strap.c.
+
+straphelper.pl is a simple script I hacked together to allow me to
+shutdown the ethercard properly before rebooting, which was a problem
+for diskless machines. (And definitely a problem when the NIC wasn't
+being shutdown, also)
 
 
 MAGIC OVERVIEW
