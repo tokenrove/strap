@@ -1,0 +1,46 @@
+
+WHO TO BLAME
+
+Julian Squires <tek@wiw.org>
+
+
+CONTENTS
+
+code overview
+magic overview
+sample script
+
+
+OVERVIEW
+
+strap.c contains the code for the loadable module which registers the
+bootstrap device, /dev/strap, char major 60, minor 0. (in the
+local/experimental section, as I doubt this code will be widely
+distributed) The heart of the code, our_machine_real_restart, is
+largely copied from arch/i386/process.c in kernel 2.3.99pre9.
+
+ribbon.s contains the code which copies the bootblock to 0000:7C00
+_after_ the kernel has dropped out of pmode. It needs to prefix
+the bootblock code before the bootblock code gets written out.
+
+modeswitch.s contains the assembler code contained in the
+array mode_switch in strap.c.
+
+
+MAGIC OVERVIEW
+
+/dev/strap - character device, major 60, minor 0
+after writing STRAP_CODELEN bytes, it will restart the machine running
+those bytes. STARP_CODELEN is currently defined to be 1024 bytes,
+so ribbon should not exceed 512 bytes.
+
+
+SAMPLE SCRIPT
+
+Something almost like a sample script for using bootstrap:
+
+## SOF
+if [ ! -e /dev/strap ] then; mknod /dev/strap c 60 0; done
+if [ "x"`grep strap /proc/modules` eq "x" ] then;insmod ./strap.o;done
+cat ribbon.bin /dev/hda1 > /dev/strap
+## EOF
