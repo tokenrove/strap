@@ -10,23 +10,33 @@
 #
 
 use IO::File;
+use strict;
 
-my ($ribbondata, $ribbonlen, $bootdata, $bootlen) = (undef, 512, undef, 512);
+my $codelen = 1024;
 
-my $fp = new IO::File($ARGV[0], 'r');
-$fp->sysread($ribbondata, $ribbonlen);
+my ($ribbondata, $ribbonlen, $bootdata, $bootlen) = (undef, $codelen/2,
+						     undef, $codelen/2);
+
+my $fp = new IO::File($ARGV[0], 'r') or die $!;
+$_ = $fp->sysread($ribbondata, $ribbonlen) or die $!;
+if($_ < $ribbonlen) { $ribbonlen = $_; }
 undef $fp;
-$fp = new IO::File($ARGV[1], 'r');
-$fp->sysread($bootdata, $bootlen);
+$fp = new IO::File($ARGV[1], 'r') or die $!;
+$fp->sysread($bootdata, $bootlen) or die $!;
+undef $fp;
 
 # Open the device early, before eth0 is shut down
-$fp = new IO::File('/dev/strap', 'w');
+$fp = new IO::File('/dev/strap', 'w') or die $!;
 
 # System specific commands here.
 system('ifconfig eth0 down');
 
 # Shutdown.
-$fp->syswrite($ribbondata, $ribbonlen);
-$fp->syswrite($bootdata, $bootlen);
+$fp->syswrite($ribbondata, $ribbonlen) or die $!;
+$fp->syswrite($bootdata, $bootlen) or die $!;
+if($ribbonlen < $bootlen) {
+  $fp->syswrite('A'x($bootlen-$ribbonlen), ($bootlen-$ribbonlen));
+}
+# the point of no return
 
 # EOF straphelper.pl

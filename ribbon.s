@@ -25,6 +25,7 @@
 	;; 
 main:
 	;; setup a stack
+	cli
 	mov ax, stackSegment
 	mov ss, ax
 	mov sp, stackTop
@@ -37,7 +38,7 @@ main:
 	call dot
 
 	;; reset the disk drives
-	;; commented out because it's SLOOOOOW and broken
+	;; commented out because it's slow
 	;call diskReset
 	;call dot
 
@@ -70,21 +71,14 @@ main:
 	rep movsb
 	call dot
 
-	;call resetWithBios
-
-	sti
+;  	call resetWithBios
 
 	;; make sure the ide controller is setup correctly
 	mov dx, ideDeviceControlRegister
 	mov al, ideDeviceControlMagic
 	out dx, al
 	ioDelay
-
-; 	mov ax, 0x0201
-; 	xor cx, cx
-; 	xor bx, bx
-; 	int 0x13
-; 	call dot
+	call dot
 
 	;; hack:
 	;; windows mysteriously believes there is a drive IO error,
@@ -93,14 +87,15 @@ main:
 	;; so we stuff the keyboard buffer with [enter] to make
 	;; things move along a little quicker.
 
-	mov ah, 0x05
-	mov cx, 0x430D
-	int 0x16
+;  	mov ah, 0x05
+;  	mov cx, 0x430D
+;	int 0x16
 
 	;; tell the system to boot from the hard drive
 	;; (dx = 0x0000 for floppy drive, 0x0080 for hard drive)
 	;; change this if you'd like to boot a floppy instead.
 	mov dx, 0x0080
+	call dot
 
 	;; jump directly to bootblock
 	jmp 0x0:0x7c00
@@ -247,10 +242,11 @@ picReset:
 	;mov al, '>'
 	;call putc
 
-	;; unmask all the IRQs just to be safe
+	;; unmask all the IRQs except eth0
 	mov al, 0x0
 	out picSlaveMaskRegister, al
 	ioDelay
+	mov al, 0x0
 	out picMasterMaskRegister, al
 	ioDelay
 
@@ -511,53 +507,53 @@ ideDumpStatus:
 	;;
 	;; use the bios to reset state
 	;;
-;resetWithBios:
-	;; preserve memory
-	; mov ax, biosSegment
-; 	mov es, ax
-; 	mov si, 0x0072
-; 	;; tell the BIOS to preserve our memory (don't wipe)
-; 	mov ax, 0x4321
-; 	stosw
-; 	mov si, 0x0067
-; 	;; OLD
-; 	;; jump back to 0000:7C00 when we finish (write 7c00 into 40:67)
-; 	;;mov eax, bootLocation
-; 	;; NEW
-; 	;; jump ahead when we finish
-; 	mov eax, afterReset
-; 	stosd
-; 	;; write into CMOS RAM that we want to go to [40:67]
-; 	cli
-; 	mov al, 0x0F
-; 	or al, 0x80
-; 	out cmosIndexRegister, al
-; 	ioDelay
-; 	;; change this to boot in different manners
-;  	;; 0x04 will read floppy then hdd
-; 	;; 0x05 will flush keyboard buffer, do an EOI, then jump to [40:67]
-; 	;;                                  [End Of Interrupt, see pokepic]
-; 	;; 0x0a will jump to our own code without the above
-; 	mov al, 0x04
-; 	out cmosDataRegister, al
-; 	ioDelay
-; 	mov al, 0x00
-; 	out cmosIndexRegister, al
-; 	ioDelay
-; 	sti
-; 	;; reset with the keyboard controller
-; 	;; (slower than triple fault, but triple fault requires
-; 	;;  modification of strap.c)
-; 	;; note FE pulses bit 0 (cpu reset), because zero == pulse bit,
-; 	;; while one == don't pulse.
-; 	mov al, kbdPulseCtrlCommand | ~(0x1)
-; 	out kbdControlRegister, al
-; 	ioDelay
+; resetWithBios:
+;  	;; preserve memory
+;  	; mov ax, biosSegment
+;   	mov es, ax
+;   	mov si, 0x0072
+;   	;; tell the BIOS to preserve our memory (don't wipe)
+;   	mov ax, 0x4321
+;   	stosw
+;   	mov si, 0x0067
+;   	;; OLD
+;   	;; jump back to 0000:7C00 when we finish (write 7c00 into 40:67)
+;   	;;mov eax, bootLocation
+;   	;; NEW
+;   	;; jump ahead when we finish
+;   	mov eax, afterReset
+;   	stosd
+;   	;; write into CMOS RAM that we want to go to [40:67]
+;   	cli
+;   	mov al, 0x0F
+;   	or al, 0x80
+;   	out cmosIndexRegister, al
+;  	ioDelay
+;   	;; change this to boot in different manners
+;    	;; 0x04 will read floppy then hdd
+;   	;; 0x05 will flush keyboard buffer, do an EOI, then jump to [40:67]
+;   	;;                                  [End Of Interrupt, see pokepic]
+;   	;; 0x0a will jump to our own code without the above
+;   	mov al, 0x0a
+;   	out cmosDataRegister, al
+;   	ioDelay
+;   	mov al, 0x00
+;   	out cmosIndexRegister, al
+;   	ioDelay
+;   	sti
+;   	;; reset with the keyboard controller
+;   	;; (slower than triple fault, but triple fault requires
+;   	;;  modification of strap.c)
+;   	;; note FE pulses bit 0 (cpu reset), because zero == pulse bit,
+;   	;; while one == don't pulse.
+;   	mov al, kbdPulseCtrlCommand | ~(0x1)
+;   	out kbdControlRegister, al
+;   	ioDelay
 
-	;; we should never get here
-	;; normal reset
-; 	jmp 0xFFFF:0x0000
-;	ret
+;  	;; we should never get here
+;  	;; normal reset
+;   	jmp 0xFFFF:0x0000
+;  	ret
 
 	;; end of helper procedures
 
