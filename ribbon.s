@@ -75,15 +75,33 @@ main:
 afterReset:
 	sti
 
+	;; make sure the ide controller is setup correctly
+	mov dx, ideDeviceControlRegister
+	mov al, ideDeviceControlMagic
+	out dx, al
+	ioDelay
+
+; 	mov ax, 0x0201
+; 	xor cx, cx
+; 	xor bx, bx
+; 	int 0x13
+; 	call dot
+
+	;; hack:
+	;; windows mysteriously believes there is a drive IO error,
+	;; asks you to replace the disk (htf one is supposed to do that
+	;; to a hard drive, i don't know), and press any key.
+	;; so we stuff the keyboard buffer with [enter] to make
+	;; things move along a little quicker.
+
+	mov ah, 0x05
+	mov cx, 0x430D
+	int 0x16
+
 	;; tell the system to boot from the hard drive
 	;; (dx = 0x0000 for floppy drive, 0x0080 for hard drive)
+	;; change this if you'd like to boot a floppy instead.
 	mov dx, 0x0080
-
-	;; print some ide magic
-	call ideDumpStatus
-
-	xor ax, ax
-	int 0x16
 
 	;; jump directly to bootblock
 	jmp 0x0:0x7c00
@@ -130,27 +148,27 @@ dot:	mov al, '.'
 	;; output the byte passed in ah
 	;; 
 dumpbyte:
-	push ax
-	push bx
-	push cx
+ 	push ax
+ 	push bx
+ 	push cx
 
-	xor bx, bx
-	mov cx, ax
-	push cx
-	shr ch, 0x04
-	mov al, ch
-	call hexal
-	call putc
-	pop cx
-	mov al, ch
-	and al, 0x0F
-	call hexal
-	call putc
+ 	xor bx, bx
+ 	mov cx, ax
+ 	push cx
+ 	shr ch, 0x04
+ 	mov al, ch
+ 	call hexal
+ 	call putc
+ 	pop cx
+ 	mov al, ch
+ 	and al, 0x0F
+ 	call hexal
+ 	call putc
 
-	pop cx
-	pop bx
-	pop ax
-	ret
+ 	pop cx
+ 	pop bx
+ 	pop ax
+ 	ret
 
 	;; put character in al on the screen
 putc:	push ax
@@ -192,10 +210,12 @@ picReset:
 	ioDelay
 
 	;; ICW2
-	;; both start at 0x08
+	;; master starts at 0x08
 	mov al, 0x08
 	out picMasterMaskRegister, al
 	ioDelay
+	;; slave starts at 0x70
+	mov al, 0x70
 	out picSlaveMaskRegister, al
 	ioDelay
 
@@ -349,8 +369,8 @@ kbdReset:
 	ioDelay
 	call kbdWaitForOutput
 	in al, kbdDataRegister
-	mov ah, al
-	call dumpbyte
+; 	mov ah, al
+; 	call dumpbyte
 
 	pop ax
 	ret
@@ -597,10 +617,13 @@ kbdDataResend		equ 0xFE
 	;; ide related
 ideErrorRegister	equ 0x01F1
 ideCommandRegister	equ 0x01F7
+ideDeviceControlRegister	equ 0x03F6
 
 ideRecalibrateCommand	equ 0x10
 ideReadCommand		equ 0x20
 ideDiagnosticsCommand	equ 0x90
+
+ideDeviceControlMagic	equ 0x0A ; nIEN and nothing else
 
 ideBusyStatus		equ 0x80
 ideDriveReadyStatus	equ 0x40
