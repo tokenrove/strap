@@ -20,8 +20,6 @@ main:
 	;; reenable interrupts
 	sti
 
-	call beep
-
 	;; reset to a known text mode
 	call videoReset
 	call dot
@@ -231,47 +229,6 @@ hexal:	cmp al, 9
 	add al, '0'
 	ret
 .l1:	add al, 'a'-10
-	ret
-
-	;;
-	;; output a beep
-	;;
-beep:	push ax
-	push cx
-
-	mov al, 0xb6
-	out 0x43, al
-	call ioDelay
-	mov al, 0x50
-	out 0x42, al
-	call ioDelay
-	mov al, 0x03
-	out 0x42, al
-	call ioDelay
-
-	in al, 0x61
-	or al, 0x03
-	out 0x61, al
-	call ioDelay
-
-	mov cx, 0x1000
-.l1:	in al, 0x61
-	test al, 0x10
-	jz .l1
-
-.l2:	in al, 0x61
-	test al, 0x10
-	jnz .l2
-
-	dec cx
-	jnz .l1
-
-	and al, 0xFD
-	out 0x61, al
-	call ioDelay
-
-	pop cx
-	pop ax
 	ret
 
 	;;
