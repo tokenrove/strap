@@ -36,13 +36,18 @@ main:
 	call videoReset
 	call dot
 
+	;; reset the disk drives
+	;; commented out because it's SLOOOOOW and broken
+	;call diskReset
+	;call dot
+
 	;; unmask IRQs
 	call picReset
 	call dot
 
 	;; reset the timer
-	call pitReset
-	call dot
+	;call pitReset
+	;call dot
 
 	;;
 	;; keyboard:
@@ -50,17 +55,9 @@ main:
 	;;     test keyboard
 	;;     disable A20 gating
 	;;
-	;call kbdTest
-	;call dot
 	call kbdReset
 	call dot
-	;call kbdTest
-	;call dot
 	call kbdDisableA20
-	call dot
-
-	;; reset the disk drives
-	call diskReset
 	call dot
 
 	;; load bootblock into 0000:7C00
@@ -73,80 +70,32 @@ main:
 	rep movsb
 	call dot
 
-	;; wait for a key
-	xor ax, ax
-	int 0x16
-
-	;;
-	;; use the bios to reset state
-	;;
-
-	;; preserve memory
-	mov ax, biosSegment
-	mov es, ax
-	mov si, 0x0072
-	;; tell the BIOS to preserve our memory (don't wipe)
-	mov ax, 0x4321
-	stosw
-	mov si, 0x0067
-	;; OLD
-	;; jump back to 0000:7C00 when we finish (write 7c00 into 40:67)
-	;;mov eax, bootLocation
-	;; NEW
-	;; jump ahead when we finish
-	mov eax, afterReset
-	stosd
-	;; write into CMOS RAM that we want to go to [40:67]
-	cli
-	mov al, 0x0F
-	or al, 0x80
-	out cmosIndexRegister, al
-	ioDelay
-	;; change this to boot in different manners
- 	;; 0x04 will read floppy then hdd
-	;; 0x05 will flush keyboard buffer, do an EOI, then jump to [40:67]
-	;;                                  [End Of Interrupt, see pokepic]
-	;; 0x0a will jump to our own code without the above
-	mov al, 0x05
-	out cmosDataRegister, al
-	ioDelay
-	mov al, 0x00
-	out cmosIndexRegister, al
-	ioDelay
-	sti
-	;; reset with the keyboard controller
-	;; (slower than triple fault, but triple fault requires
-	;;  modification of strap.c)
-	;; note FE pulses bit 0 (cpu reset), because zero == pulse bit,
-	;; while one == don't pulse.
-	mov al, kbdPulseCtrlCommand | ~(0x1)
-	out kbdControlRegister, al
-	ioDelay
-
-	;; we should never get here
-	;; normal reset
-	jmp 0xFFFF:0x0000
+	;call resetWithBios
 
 afterReset:
-	call dot
+	sti
 
 	;; tell the system to boot from the hard drive
 	;; (dx = 0x0000 for floppy drive, 0x0080 for hard drive)
 	mov dx, 0x0080
+
+	;; print some ide magic
+	call ideDumpStatus
+
+	xor ax, ax
+	int 0x16
 
 	;; jump directly to bootblock
 	jmp 0x0:0x7c00
 
 	;; end of main function
 
-
 	;; 
 	;; helper procedures
 	;;
 
 	;; output . to screen
-dot:
-	mov al, '.'
+dot:	mov al, '.'
 	call putc
 	ret
 
@@ -154,27 +103,27 @@ dot:
 	;; dumpdword
 	;; output the dword passed in eax
 	;; 
-dumpdword:
-	push eax
-	shr eax, 16
-	call dumpword
-	pop eax
-	call dumpword
-	ret
+; dumpdword:
+; 	push eax
+; 	shr eax, 16
+; 	call dumpword
+; 	pop eax
+; 	call dumpword
+; 	ret
 
 	;;
 	;; dumpword
 	;; output the word passed in ax
 	;; 
-dumpword:
-	push ax
+; dumpword:
+; 	push ax
 
-	call dumpbyte
-	mov ah, al
-	call dumpbyte
+; 	call dumpbyte
+; 	mov ah, al
+; 	call dumpbyte
 
-	pop ax
-	ret
+; 	pop ax
+; 	ret
 
 	;;
 	;; dumpbyte
@@ -228,13 +177,13 @@ hexal:	cmp al, 9
 
 	;;
 	;; Bring the 8259 PIC to as sane a state as possible
-	;; note that there is more that could be done - one could
-	;; send the ICWs (initialization control words), but
-	;; for the moment we rely on the BIOS to do this
+	;; This is absolutely necessary, as Linux remaps the IRQ
+	;; routing, and the BIOS can't deal with that.
 	;; 
 picReset:
 	push ax
 
+	cli
 	;; ICW1
 	mov al, 0x11
 	out picMasterCommandRegister, al
@@ -243,10 +192,10 @@ picReset:
 	ioDelay
 
 	;; ICW2
+	;; both start at 0x08
 	mov al, 0x08
 	out picMasterMaskRegister, al
 	ioDelay
-	mov al, 0x10
 	out picSlaveMaskRegister, al
 	ioDelay
 
@@ -279,25 +228,20 @@ picReset:
 	;mov al, '>'
 	;call putc
 
-	cli
-	;; commented out: we used to unmask all the IRQs just to be safe
-	;mov al, 0x0
-	;; mask out everything but irqs 0, 1, and 2
-	mov al, 0xFF
+	;; unmask all the IRQs just to be safe
+	mov al, 0x0
 	out picSlaveMaskRegister, al
 	ioDelay
-	mov al, 0xF8
 	out picMasterMaskRegister, al
 	ioDelay
 
 	;; send EOI (interrupt finished) to PIC, just in case Linux left an
 	;; int ``with its pants down'', as it were
-	;; reason this is commented out: the bios should do this for us
-	;;mov al, picEndOfInterrupt
-	;;out picMasterCommandRegister, al
-	;;ioDelay
-	;;out picSlaveCommandRegister, al
-	;;ioDelay
+	mov al, picEndOfInterrupt
+	out picMasterCommandRegister, al
+	ioDelay
+	out picSlaveCommandRegister, al
+	ioDelay
 
 	sti
 
@@ -318,21 +262,61 @@ videoReset:
 	;;
 	;; reset the 825[34] PIT (Programmable Interval Timer),
 	;; 
-pitReset:
-	push ax
+; pitReset:
+; 	push ax
 
-	cli
-	mov al, 0x36
-	out 0x43, al
-	ioDelay
-	xor al, al
-	out 0x40, al
-	ioDelay
-	out 0x40, al
-	ioDelay
-	sti
+; 	cli
+; 	mov al, 0x36
+; 	out 0x43, al
+; 	ioDelay
+; 	xor al, al
+; 	out 0x40, al
+; 	ioDelay
+; 	out 0x40, al
+; 	ioDelay
+; 	sti
 
-	pop ax
+; 	pop ax
+; 	ret
+
+kbdResetInternal:
+	;; reset keyboard
+.l1:	mov al, kbdResetCommand
+	out kbdDataRegister, al
+	ioDelay
+	;;   wait for ACK
+	call kbdWaitForOutput
+	in al, kbdDataRegister
+	cmp al, kbdDataACK
+	je .l3
+	cmp al, kbdDataResend
+	je .l1
+	mov al, '?'
+	call putc
+.l3:	ret
+
+kbdDisable:
+	;; disable keyboard
+.l1:	mov al, kbdDisableCommand
+	out kbdDataRegister, al
+	ioDelay
+	;;   wait for ACK
+	call kbdWaitForOutput
+	in al, kbdDataRegister
+	cmp al, kbdDataACK
+	jne .l1
+	ret
+
+kbdEnable:
+	;; enable keyboard
+.l1:	mov al, kbdEnableCommand
+	out kbdDataRegister, al
+	ioDelay
+	;;   wait for ACK
+	call kbdWaitForOutput
+	in al, kbdDataRegister
+	cmp al, kbdDataACK
+	jne .l1
 	ret
 
 	;;
@@ -341,56 +325,32 @@ pitReset:
 kbdReset:
 	push ax
 
-	;; explicitly disable the keyboard
-	mov al, kbdDisableCommand
-	out kbdDataRegister, al
+	;; enable controller
+	mov al, kbdEnableCtrlCommand
+	out kbdControlRegister, al
 	ioDelay
-	call kbdWaitForACK
-	jnc .l3
-	;; an error occurred
-	mov al, '%'
-	call putc
-.l3:
 
-	;; reset the keyboard
-	mov al, kbdResetToDefaultCommand
+	call kbdResetInternal
+	call kbdDisable
+	;; write controller mode 65
+	mov al, kbdWriteModeCtrlCommand
+	out kbdControlRegister, al
+	ioDelay
+	;; magic mode
+	mov al, 0x65
 	out kbdDataRegister, al
 	ioDelay
-	call kbdWaitForACK
-	jnc .l2
-	;; an error occurred
-	mov al, '$'
-	call putc
-.l2:
-	;; explicitly enable the keyboard
-	mov al, kbdEnableCommand
-	out kbdDataRegister, al
-	ioDelay
-	call kbdWaitForACK
-	jnc .l1
-	;; an error occurred
-	mov al, '#'
-	call putc
-.l1:
+
+	call kbdEnable
 
 	;; output controller mode
 	mov al, kbdReadModeCtrlCommand
 	out kbdControlRegister, al
 	ioDelay
 	call kbdWaitForOutput
-	mov ax, videoSegment
-	mov es, ax
-	mov di, 0x0
 	in al, kbdDataRegister
-	mov ah, 0x01
-	mov bh, al
-	shr al, 4
-	call hexal
-	stosw
-	mov al, bh
-	and al, 0x0F
-	call hexal
-	stosw
+	mov ah, al
+	call dumpbyte
 
 	pop ax
 	ret
@@ -464,16 +424,121 @@ kbdTest:
 	pop ax
 	ret
 
+	;;
+ideWaitForBusyClear:
+	push ax
+	push dx
+
+.l1:	mov dx, ideCommandRegister
+	in al, dx
+	test al, ideBusyStatus
+	jnz .l1
+
+	pop dx
+	pop ax
+	ret
+
+	;;
+ideWaitForDriveReady:
+	push ax
+	push dx
+
+.l1:	mov dx, ideCommandRegister
+	in al, dx
+	test al, ideDriveReadyStatus
+	jnz .l1
+
+	pop dx
+	pop ax
+	ret
+
 	;; reset floppy and hard drive systems via the bios
 diskReset:
+	xor ax, ax
+	xor dx, dx
+
 	;; reset the floppy disk system
-	mov ax, 0x0000
+	mov dl, 0x80
 	int 0x13
 
 	;; reset the first hard drive
-	mov ax, 0x0D80
+	mov ah, 0x0D
 	int 0x13
 	ret
+
+ideDumpStatus:
+	push ax
+	push dx
+
+	call ideWaitForBusyClear
+	mov dx, ideCommandRegister
+	in al, dx
+	mov ah, al
+	call dumpbyte
+	test al, ideErrorStatus
+	jz .l1
+	;; dump error register
+	mov al, '!'
+	call putc
+	mov dx, ideErrorRegister
+	in al, dx
+	mov ah, al
+	call dumpbyte
+.l1:	
+	pop dx
+	pop ax
+	ret
+
+	;;
+	;; use the bios to reset state
+	;;
+;resetWithBios:
+	;; preserve memory
+	; mov ax, biosSegment
+; 	mov es, ax
+; 	mov si, 0x0072
+; 	;; tell the BIOS to preserve our memory (don't wipe)
+; 	mov ax, 0x4321
+; 	stosw
+; 	mov si, 0x0067
+; 	;; OLD
+; 	;; jump back to 0000:7C00 when we finish (write 7c00 into 40:67)
+; 	;;mov eax, bootLocation
+; 	;; NEW
+; 	;; jump ahead when we finish
+; 	mov eax, afterReset
+; 	stosd
+; 	;; write into CMOS RAM that we want to go to [40:67]
+; 	cli
+; 	mov al, 0x0F
+; 	or al, 0x80
+; 	out cmosIndexRegister, al
+; 	ioDelay
+; 	;; change this to boot in different manners
+;  	;; 0x04 will read floppy then hdd
+; 	;; 0x05 will flush keyboard buffer, do an EOI, then jump to [40:67]
+; 	;;                                  [End Of Interrupt, see pokepic]
+; 	;; 0x0a will jump to our own code without the above
+; 	mov al, 0x04
+; 	out cmosDataRegister, al
+; 	ioDelay
+; 	mov al, 0x00
+; 	out cmosIndexRegister, al
+; 	ioDelay
+; 	sti
+; 	;; reset with the keyboard controller
+; 	;; (slower than triple fault, but triple fault requires
+; 	;;  modification of strap.c)
+; 	;; note FE pulses bit 0 (cpu reset), because zero == pulse bit,
+; 	;; while one == don't pulse.
+; 	mov al, kbdPulseCtrlCommand | ~(0x1)
+; 	out kbdControlRegister, al
+; 	ioDelay
+
+	;; we should never get here
+	;; normal reset
+; 	jmp 0xFFFF:0x0000
+;	ret
 
 	;; end of helper procedures
 
@@ -489,7 +554,6 @@ oldInt9	resd 1
 	;; constants
 	;;
 
-videoSegment		equ 0xb800
 stackSegment		equ 0x2000 ; arbitrary
 stackTop		equ 0xF000
 
@@ -506,6 +570,8 @@ picSlaveMaskRegister	equ 0xA1
 picMasterCommandRegister	equ 0x20
 picSlaveCommandRegister		equ 0xA0
 
+picEndOfInterrupt	equ 0x20 ; non-specific EOI
+
 	;; keyboard related
 kbdControlRegister	equ 0x64
 kbdDataRegister		equ 0x60
@@ -514,16 +580,31 @@ kbdReadModeCtrlCommand	equ 0x20
 kbdWriteModeCtrlCommand	equ 0x60
 kbdSelfTestCtrlCommand		equ 0xAA
 kbdInterfaceSelfTestCtrlCommand	equ 0xAB
+kbdEnableCtrlCommand	equ 0xAE
 kbdReadOutputPortCtrlCommand	equ 0xD0
 kbdWriteOutputPortCtrlCommand	equ 0xD1
 kbdPulseCtrlCommand		equ 0xF0
 
 kbdEnableCommand	equ 0xF4
 kbdDisableCommand	equ 0xF5
-kbdResetToDefaultCommand	equ 0xF6
+kbdResetCommand		equ 0xF6
 
 kbdOutputPortA20	equ 0x02
+kbdDataPOR		equ 0xAA
 kbdDataACK		equ 0xFA
+kbdDataResend		equ 0xFE
+
+	;; ide related
+ideErrorRegister	equ 0x01F1
+ideCommandRegister	equ 0x01F7
+
+ideRecalibrateCommand	equ 0x10
+ideReadCommand		equ 0x20
+ideDiagnosticsCommand	equ 0x90
+
+ideBusyStatus		equ 0x80
+ideDriveReadyStatus	equ 0x40
+ideErrorStatus		equ 0x01
 
 	;; end of constants
 
@@ -532,5 +613,3 @@ kbdDataACK		equ 0xFA
 	;; _MUST_ come last
 	;; 
 bootblock:	
-
-
