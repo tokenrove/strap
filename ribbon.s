@@ -26,7 +26,7 @@
 main:
 	;; setup a stack
 	mov ax, stackSegment
-	mov es, ax
+	mov ss, ax
 	mov sp, stackTop
 
 	;; reenable interrupts
@@ -72,7 +72,6 @@ main:
 
 	;call resetWithBios
 
-afterReset:
 	sti
 
 	;; make sure the ide controller is setup correctly
@@ -566,7 +565,7 @@ ideDumpStatus:
 	;; data
 	;;
 
-oldInt9	resd 1
+; oldInt9	resd 1
 
 	;; end of data declarations
 
@@ -574,8 +573,8 @@ oldInt9	resd 1
 	;; constants
 	;;
 
-stackSegment		equ 0x0050 ; arbitrary
-stackTop		equ 0xF000
+stackSegment		equ 0x9000 ; arbitrary - this is the value used by lilo
+stackTop		equ 0xB000
 
 	;; bootstrap related
 bootLocation		equ 0x00007c00
