@@ -360,8 +360,9 @@ handleInt9:
 	mov di, 0x0
 	in al, kbdDataRegister
 	cmp al, 0x01
-	je .l1
-	mov ah, 0x01
+	jne .l1
+	call removeInt9
+.l1:	mov ah, 0x01
 	mov bh, al
 	shr al, 4
 	call hexal
@@ -370,7 +371,6 @@ handleInt9:
 	and al, 0x0F
 	call hexal
 	stosw
-.l1:	call removeInt9
 	;; send end of interrupt
 	mov al, 0x20
 	out picMasterCommandRegister, al
