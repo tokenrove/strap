@@ -61,21 +61,7 @@ main:
 	rep movsb
 	call dot
 
-	;; let's try our own keyboard handler
-	mov ax, 0x0
-	mov ds, ax
-	mov es, ax
-	mov si, 9*4
-	mov di, si
-	lodsd
-	mov ebx, eax
-	mov eax, handleInt9
-	stosd
-	mov ax, cs
-	mov es, ax
-	mov di, oldInt9
-	mov eax, ebx
-	stosd
+	call installInt9
 
 	;; this will hang until we fix keyboard
 	xor ax, ax
@@ -147,7 +133,6 @@ afterReset:
 	;; 
 	;; helper procedures
 	;;
-
 
 	;; output . to screen
 dot:
@@ -346,7 +331,86 @@ kbdWaitForACK:
 	stc
 .l1:	ret
 
+	;; disable the A20 line
+kbdDisableA20:
+	push ax
+
+	mov al, kbdReadOutputPortCtrlCommand
+	out kbdControlRegister, al
+	call ioDelay
+	in al, kbdDataRegister
+	mov ah, al
+	mov al, kbdWriteOutputPortCtrlCommand
+	out kbdControlRegister, al
+	call ioDelay
+	mov al, 0xDD		; FIXME
+	out kbdDataRegister, al
+	call ioDelay
+
+	pop ax
+	ret
+
+	;;
+	;; faux int9 handler for testing
+	;;
+handleInt9:
+	cli
+	mov ax, videoSegment
+	mov es, ax
+	mov di, 0x0
+	in al, kbdDataRegister
+	cmp al, 0x01
+	je .l1
+	mov ah, 0x01
+	mov bh, al
+	shr al, 4
+	call hexal
+	stosw
+	mov al, bh
+	and al, 0x0F
+	call hexal
+	stosw
+.l1:	call removeInt9
+	;; send end of interrupt
+	mov al, 0x20
+	out picMasterCommandRegister, al
+	sti
+	ret
+
+	;; let's try our own keyboard handler
+installInt9:
+	;; note: size optimization, we assume CS is 0x0
+	push cs
+	push cs
+	pop ds
+	pop es
+	mov si, 9*4
+	mov di, si
+	lodsd
+	mov ebx, eax
+	mov eax, handleInt9
+	stosd
+	push cs
+	pop es
+	mov di, oldInt9
+	mov eax, ebx
+	stosd
+	ret
+
+removeInt9:
+	push cs
+	pop ds
+	mov si, oldInt9
+	lodsd
+	;; note: size optimization, we assume CS is 0x0
+	push cs
+	pop es
+	mov di, 9*4
+	stosd
+	ret
+
 	;; perform self-tests
+	;; note that this appears to royally mess up the keyboard
 kbdTest:
 	push ax
 
@@ -379,25 +443,6 @@ kbdTest:
 	pop ax
 	ret
 
-	;; disable the A20 line
-kbdDisableA20:
-	push ax
-
-	mov al, kbdReadOutputPortCtrlCommand
-	out kbdControlRegister, al
-	call ioDelay
-	in al, kbdDataRegister
-	mov ah, al
-	mov al, kbdWriteOutputPortCtrlCommand
-	out kbdControlRegister, al
-	call ioDelay
-	mov al, 0xDD		; FIXME
-	out kbdDataRegister, al
-	call ioDelay
-
-	pop ax
-	ret
-
 	;; reset floppy and hard drive systems via the bios
 diskReset:
 	;; reset the floppy disk system
@@ -407,30 +452,6 @@ diskReset:
 	;; reset the first hard drive
 	mov ax, 0x0D80
 	int 0x13
-	ret
-
-	;;
-	;; faux int9 handler for testing
-	;;
-handleInt9:
-	cli
-	mov ax, videoSegment
-	mov es, ax
-	mov di, 0x0
-	in al, kbdDataRegister
-	mov ah, 0x01
-	mov bh, al
-	shr al, 4
-	call hexal
-	stosw
-	mov al, bh
-	and al, 0x0F
-	call hexal
-	stosw
-	;; send end of interrupt
-	mov al, 0x20
-	out picMasterCommandRegister, al
-	sti
 	ret
 
 	;; end of helper procedures
